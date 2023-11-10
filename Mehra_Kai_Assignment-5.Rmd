@@ -1,0 +1,674 @@
+---
+title: "Mehra_Kai_Assignment-5"
+author: "Kai Mehra"
+date: "2023-03-31"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+```{r}
+# Importing the {tidyverse}, {ggplot2}, {factoextra}, {cluster}, {NbClust},
+# and {aricode} libraries.
+
+library(tidyverse)
+library(ggplot2)
+library(factoextra)
+library(cluster)
+library(NbClust)
+library(aricode)
+
+```
+
+# Data
+```{r}
+beatles <- read.csv("../Data/Beatles Data/TheBeatlesCleaned.csv")
+
+dim(beatles)
+```
+
+```{r}
+unique(beatles$album)
+length(unique(beatles$album))
+```
+
+The "beatles" data set contains Spotify metadata on 193 Beatles's songs based 11 different characteristics. The data set contains songs from 13 albums comprising the Beatles's core discography. The data set came from Kaggle, and it contains basic demographic information on the song including the song id, release year, name, and album name. The data also contains song characteristic data including the danceability, energy, speechiness, acousticness, liveness, valence, and duration (milliseconds).
+
+# Research Question
+Can Spotify song characteristics cluster The Beatles's songs into their albums as they released them? Are there clusters that better group similar songs together?
+
+# Hypothesis
+The Beatles's were known for being experimental and trying new things from album to album, and from my experience, I believe The Beatles's albums are relatively cohesive. Thus, I think that the k-means clustering algorithm will be able to separate some of the albums apart. However, I do not think that the algorithm will be able to identify all 13 albums as there is overlap in style and sound between albums.
+
+
+# Variables of Interest
+
+## Dependent Variable:
+album: The Beatles released 13 albums, and I will use the k-means clustering algorithm to attempt to classify the songs back into their albums.
+
+## Independent Variables:
+
+ * length_sec: The length of the song in seconds
+ * danceability: how suitable a track is for dancing based on a combination of musical elements.      0.0 is least danceable and 1.0 is most danceable.
+ * energy: a measure from 0.0 to 1.0 and represents a perceptual measure of intensity and activity.
+ * speechiness: Speechiness detects the presence of spoken words in a track. The more exclusively      speech-like the recording (e.g. talk show, audio book, poetry), the closer to 1.0 the attribute     value. 
+ * acousticness: 	a confidence measure from 0.0 to 1.0 of whether the track is acoustic. 1.0          represents high confidence the track is acoustic.
+ * liveness: Detects the presence of an audience in the recording. Higher liveness values represent
+  an increased probability that the track was performed live. A value above 0.8 provides strong
+  likelihood that the track is live.
+ * valence: A measure from 0.0 (very sad) to 1.0 (very happy) describing the musical positiveness     conveyed by a track.
+ 
+These variables provide a comprehensive understanding of the general characteristics of a specific song. Additionally, since they are all continuous, numeric variables, they lend themselves to analysis using linear regression. Intuitively, these variables should have some impact on popularity as songs fitting into certain genres have higher levels of popularity than others. These variables help define genres; for example, a highly danceable, energetic, valent, and loud song would likely be a club/party song which can be incredibly popular.
+
+# Data Wrangling
+```{r}
+# Editing song titles to distinguish different recordings of the same song
+beatles$song[id = 109] <- "sgt. Peppers lonely hearts club band - reprise"
+beatles$song[id = 152] <- "yellow submarine - yellow submarine"
+beatles$song[id = 157] <- "all you need is love - yellow submarine"
+
+# Fixing a typo in the data
+beatles$energy[id = 111] <- 0.613
+```
+
+```{r}
+# ensuring that there are no duplicate songs
+length(unique(beatles$song)) == nrow(beatles)
+```
+
+```{r}
+beatles <-
+  beatles %>%
+  mutate(length_sec = duration_ms/1000) %>% # converting length from milsecs to secs
+  select(-duration_ms)
+
+beatles <- na.omit(beatles) # ensuring complete data
+```
+
+```{r}
+# selecting the variables of interest
+beatles_interest <-
+  beatles %>%
+  select(
+    year,
+    danceability,
+    energy,
+    speechiness,
+    acousticness,
+    liveness,
+    valence,
+    length_sec
+  )
+
+str(beatles_interest) # checking the structure of beatles_interest
+```
+
+```{r}
+# converting energy from a character to numeric 
+beatles_interest$energy <- as.numeric(beatles_interest$energy)
+```
+
+```{r}
+row.names(beatles_interest) <- NULL
+```
+
+```{r}
+# storing the actual album values for each song
+beatles_actual <- beatles$album
+length(unique(beatles_actual)) # number of albums
+table(beatles_actual) # true frequency in each album
+```
+
+
+# Theoretical Run - 13 clusters
+
+```{r}
+# Perform k-means with 13 clusters
+theoretical_run <- kmeans(
+  x = beatles_interest, # song characteristics
+  centers = 13, # number of clusters
+  iter.max = 25, # number of maximum iterations
+  nstart = 25 # number of random starting values
+)
+```
+
+```{r}
+# Within-cluster sum of squares
+theoretical_run$withinss
+
+# Variance explained
+theoretical_run$betweenss / theoretical_run$totss 
+# between sum of squares /total sum of squares
+```
+
+```{r}
+# cluster frequencies compared to actual frequencies
+table(theoretical_run$cluster)
+
+table(beatles_actual)
+```
+
+```{r}
+# centers of the 13 clusters
+round(theoretical_run$centers, 4) 
+```
+
+```{r}
+# Visualize 13 clusters
+fviz_cluster(
+  object = theoretical_run,
+  data = beatles_interest
+)
+```
+
+```{r}
+# plotting actual album clusters
+ground_truth <- theoretical_run
+ground_truth$cluster <- beatles_actual
+fviz_cluster(
+  object = ground_truth,
+  data = beatles_interest,
+  show.clust.cent = FALSE
+)
+```
+
+## Removing Outliers
+Songs 110, 144, 150, 156, and 170 (A Day in the Life, I Want You, Helter Skelter, Revolution 9, It's All Too Much, ) are outlying songs as visualized in the cluster plot. I will remove them to see if that effects how the clustering is completed.
+
+```{r}
+# removing outlier songs
+beatles_interest_no_outliers <- beatles_interest[-c(110, 144, 150, 156, 170),]
+beatles_actual_no_outliers <- beatles_actual[-c(110, 144, 150, 156, 170)]
+```
+
+```{r}
+# Perform k-means with 13 clusters
+theoretical_run <- kmeans(
+  x = beatles_interest_no_outliers, # song characteristics
+  centers = 13, # number of clusters
+  iter.max = 25, # number of maximum iterations
+  nstart = 25 # number of random starting values
+)
+```
+
+```{r}
+# Within-cluster sum of squares
+theoretical_run$withinss
+
+# Variance explained
+theoretical_run$betweenss / theoretical_run$totss 
+# between sum of squares /total sum of squares
+```
+
+```{r}
+# Visualize 13 clusters
+fviz_cluster(
+  object = theoretical_run,
+  data = beatles_interest_no_outliers
+)
+```
+
+
+# Unsupervised Methods
+
+## Elbow Method
+
+```{r}
+fviz_nbclust(
+  x = beatles_interest_no_outliers,
+  FUNcluster = kmeans, # cluster function
+  method = "wss", # within-cluster sum of squares
+  k.max = 15,  # maximum number of clusters
+  iter.max = 25, # same as our k-means setup
+  nstart = 25 # same as our k-means setup
+)
+```
+
+The elbow method indicates that around 2 to 4 clusters would be optimal in this analysis. However, the intepretation of the graph is subjective, so I will employ the silhouette and gap statistic methods to form a more concrete opinion.
+
+## Silhouette Method
+```{r}
+fviz_nbclust(
+  x = beatles_interest_no_outliers,
+  FUNcluster = kmeans, # cluster function
+  method = "silhouette", # silhouette
+  k.max = 15,  # maximum number of clusters
+  iter.max = 25, # same as our k-means setup
+  nstart = 25 # same as our k-means setup
+)
+```
+
+The silhouette method indicates that 2 clusters are optimal.
+
+## Gap Statistic Method
+
+```{r}
+set.seed(1234) # set seed
+
+kmeans_gap <- clusGap(
+  x = beatles_interest_no_outliers,
+  FUNcluster = kmeans,
+  iter.max = 25, # same as our k-means setup
+  nstart = 25, # same as our k-means setup
+  K.max = 15, # maximum number of clusters
+  B = 100 # takes some time...
+)
+
+# Plot gap statistic
+fviz_gap_stat(kmeans_gap)
+```
+
+The gap statistic method indicates that 1 cluster is optimal which makes some intuitive sense as all of these songs were made by The Beatles in a seven year period.
+
+Combining all of the results from the three unsupervised methods indicates that 2 clusters are the optimal clustering for The Beatles's songs.
+
+## Unsupervised Run - 2 Clusters
+
+```{r}
+set.seed(1234) # set seed
+
+# Perform k-means with 2 clusters
+unsupervised_run <- kmeans(
+  x = beatles_interest_no_outliers,
+  centers = 2,
+  iter.max = 25,
+  nstart = 25
+)
+```
+
+```{r}
+# Within-cluster sum of squares
+unsupervised_run$withinss
+
+# Variance explained
+unsupervised_run$betweenss / unsupervised_run$totss
+# between sum of squares / # total sum of squares
+
+# Check out cluster frequencies
+table(unsupervised_run$cluster)
+
+# Actual frequencies
+table(beatles_actual)
+```
+
+```{r}
+# centroids of unsupervised run
+unsupervised_run$centers
+```
+
+
+```{r}
+# plot the clusters for the unsupervised_run
+fviz_cluster(
+  object = unsupervised_run,
+  data = beatles_interest_no_outliers
+)
+```
+
+```{r}
+original_albums <- 
+  c("A Hard Day's Night",
+  "Abbey Road",
+  "Beatles for Sale",
+  "Help!",
+  "Let It Be",
+  "Magical Mystery Tour",
+  "Please Please Me",
+  "Revolver",
+  "Rubber Soul",
+  "Sgt. Pepper's Lonely Hearts Club Band",
+  "The Beatles (white album)",
+  "With The Beatles",
+  "Yellow Submarine")
+
+# convert clusters into a comparable formal
+names(original_albums) <- original_albums
+album_classes <- original_albums[beatles_actual_no_outliers]
+
+numeric_classes <- as.numeric(factor(album_classes))
+
+theoretical_classes <- theoretical_run$cluster
+```
+
+```{r}
+# Compare using Adjusted Rand Index
+ARI(
+  numeric_classes,
+  theoretical_classes
+)
+ 
+# Compare using Adjusted Mutual Information
+AMI(
+  numeric_classes,
+  theoretical_classes
+)
+```
+
+# Hierarchical Clustering
+
+# Theoretical Methods
+```{r}
+methods <- c(
+  "complete", "average", "single",
+  "complete", "ward"
+)
+
+# Get agglomerative coefficient results
+sapply(
+  X = methods,
+  function(method){
+    
+    # Apply agglomerative methods
+    agnes(
+      x = beatles_interest_no_outliers, # data
+      metric = "euclidean", # distance
+      method = method # linking
+    )$ac
+    
+  }
+)
+```
+
+```{r}
+# using ward linking method
+beatles_hclust_ward <- agnes(
+  x = beatles_interest_no_outliers, # data
+  metric = "euclidean", # distance
+  method = "ward" # linking
+)
+
+# plot ward dendogram
+plot(beatles_hclust_ward, which.plots = 2)
+```
+
+
+# Unsupervised Methods
+
+## Elbow Method
+```{r}
+fviz_nbclust(
+  x = beatles_interest_no_outliers,
+  FUNcluster = hcut, # cluster function
+  hc_method = "ward.D", # use Ward's
+  method = "wss" # within-cluster sum of squares
+)
+```
+
+The elbow method seems to indicate that around 2 to 4 clusters is optimal.
+
+## Silhouette Method
+```{r}
+fviz_nbclust(
+  x = beatles_interest_no_outliers,
+  FUNcluster = hcut, # cluster function
+  hc_method = "ward.D", # use Ward's
+  method = "silhouette" # silhouette method
+)
+```
+
+The silhouette method indicates that 10 clusters are optimal.
+
+## Gap Statistic
+
+```{r}
+# Set seed
+set.seed(1234)
+
+# Custom hierarchical clustering function
+custom_hclust <- function(x, k, ...){
+  list(
+    cluster = cutree(
+      # Base R version of `agnes`
+      # Much faster
+      hclust(
+        dist(x), method = "ward.D",
+        ...
+      ),
+      k = k
+    )
+  )
+}
+
+## Perform bootstrap
+hclust_gap <- clusGap(
+  x = beatles_interest_no_outliers,
+  FUNcluster = custom_hclust,
+  K.max = 15, # same as k-means setup
+  B = 100 # takes some time...
+)
+
+# Plot gap statistic
+fviz_gap_stat(hclust_gap)
+```
+
+The gap statistic indicates that one cluster is optimal.
+
+## Hierarchical Cluster Plots
+
+```{r}
+# corresponding cuts of the dendogram
+cut_two <- cutree(beatles_hclust_ward, k = 2)
+cut_three <- cutree(beatles_hclust_ward, k = 3)
+cut_ten <- cutree(beatles_hclust_ward, k = 10)
+```
+
+```{r}
+# Two Clusters
+fviz_cluster(
+  list(
+    data = beatles_interest_no_outliers,
+    cluster = cut_two
+  )
+)
+```
+
+```{r}
+# Three Clusters
+fviz_cluster(
+  list(
+    data = beatles_interest_no_outliers,
+    cluster = cut_three
+  )
+)
+```
+
+```{r}
+# Ten Clusters
+fviz_cluster(
+  list(
+    data = beatles_interest_no_outliers,
+    cluster = cut_ten
+  )
+)
+```
+
+
+# Final Analysis
+
+```{r}
+# putting hierarchical clusters into data
+final_analysis <-
+  beatles_interest_no_outliers %>%
+  mutate(cut_two, cut_three, cut_ten)
+```
+
+```{r}
+# summarizing based on two clusters
+final_analysis %>%
+  group_by(cut_two) %>%
+  summarise("Mean Year" = mean(year),
+            "Mean Danceability" = mean(danceability),
+            "Mean Energy" = mean(energy),
+            "Mean Speechiness" = mean(speechiness),
+            "Mean Acousticness" = mean(acousticness),
+            "Mean Liveness" = mean(liveness),
+            "Mean Valence" = mean(valence),
+            "Mean Length" = mean(length_sec))
+```
+
+```{r}
+# summarizing based on three clusters
+final_analysis %>%
+  group_by(cut_three) %>%
+  summarise("Mean Year" = mean(year),
+            "Mean Danceability" = mean(danceability),
+            "Mean Energy" = mean(energy),
+            "Mean Speechiness" = mean(speechiness),
+            "Mean Acousticness" = mean(acousticness),
+            "Mean Liveness" = mean(liveness),
+            "Mean Valence" = mean(valence),
+            "Mean Length" = mean(length_sec))
+```
+
+```{r}
+# summarizing based on ten clusters
+final_analysis %>%
+  group_by(cut_ten) %>%
+  summarise("Mean Year" = mean(year),
+            "Mean Danceability" = mean(danceability),
+            "Mean Energy" = mean(energy),
+            "Mean Speechiness" = mean(speechiness),
+            "Mean Acousticness" = mean(acousticness),
+            "Mean Liveness" = mean(liveness),
+            "Mean Valence" = mean(valence),
+            "Mean Length" = mean(length_sec))
+```
+
+## Plots of Final Analysis
+
+```{r}
+cols <- c("liveness"="grey","danceability"="red","energy"="orange", "valence"="purple", "acousticness" = "cornflowerblue") # store colors
+
+final_analysis %>%
+  ggplot() + 
+  geom_density( # density plot
+    aes(
+    x = liveness,
+    fill = "liveness"),
+    alpha = 0.5
+  ) +
+  geom_density(
+    aes(
+    x = danceability,
+    fill = "danceability"),
+    alpha = 0.5
+    ) + 
+  geom_density(
+    aes(x = energy,
+    fill = "energy"),
+    alpha = 0.5
+    ) + 
+  geom_density(
+    aes(
+    x = valence,
+    fill = "valence"),
+    alpha = 0.5
+  ) + 
+  geom_density(
+    aes(
+    x = acousticness,
+    fill = "acousticness"),
+    alpha = 0.5
+    ) +
+  facet_grid(~cut_three) +
+  scale_fill_manual(name = "Song Chars", values = cols) + # add legend
+  labs(x = "Characteristic Value",
+       y = "Density",
+       title = "Density Plot of Song Chars by Cluster") # better labels
+  
+```
+
+```{r}
+# plot of char density for ten clusters
+final_analysis %>%
+  ggplot() + 
+  geom_density( # density plot
+    aes(
+    x = liveness,
+    fill = "liveness"),
+    alpha = 0.5
+  ) +
+  geom_density(
+    aes(
+    x = danceability,
+    fill = "danceability"),
+    alpha = 0.5
+    ) + 
+  geom_density(
+    aes(x = energy,
+    fill = "energy"),
+    alpha = 0.5
+    ) + 
+  geom_density(
+    aes(
+    x = valence,
+    fill = "valence"),
+    alpha = 0.5
+  ) + 
+  geom_density(
+    aes(
+    x = acousticness,
+    fill = "acousticness"),
+    alpha = 0.5
+    ) +
+  facet_wrap(~cut_ten,
+             ncol = 5) +
+  scale_fill_manual(name = "Song Chars", values = cols) + # legend
+  labs(x = "Characteristic Value",
+       y = "Density",
+       title = "Density Plot of Song Chars by Cluster") # better labels
+  
+```
+
+```{r}
+# Plot of char density for all songs
+final_analysis %>%
+  ggplot() + 
+  geom_density(
+    aes(
+    x = liveness,
+    fill = "liveness"),
+    alpha = 0.5
+  ) +
+  geom_density(
+    aes(
+    x = danceability,
+    fill = "danceability"),
+    alpha = 0.5
+    ) + 
+  geom_density(
+    aes(x = energy,
+    fill = "energy"),
+    alpha = 0.5
+    ) + 
+  geom_density(
+    aes(
+    x = valence,
+    fill = "valence"),
+    alpha = 0.5
+  ) + 
+  geom_density(
+    aes(
+    x = acousticness,
+    fill = "acousticness"),
+    alpha = 0.5
+    ) +
+  scale_fill_manual(name = "Song Chars", values = cols) +
+  labs(x = "Characteristic Value",
+       y = "Density",
+       title = "Density Plot of All Song Chars")
+```
+
+# Discussion
+
+The Beatles were revolutionary artists during the 1960s who churned out 13 of the best albums of all time. Many of these albums explored different genres from rock and roll to pop to incorporating international (specifically South Asian) influences. Using k-means clustering, I found that there was little ability for the algorithm to separate songs into their respective albums based on Spotify metadata. While the variance explained was high, this was likely due to there being 13 clusters. The clusters had vastly different frequencies than the actual albums, and the centroids and visualization indicated high overlap in the data. Removing outliers from the data improved the clustering somewhat, but the original data, when clustered by actual album is not very divisible into groups. While some claim that the Beatles created drastically different albums, the data shows that the albums mainly overlapped with similar characteristics between them. This is backed up by the AMI and ARI computed between the ground truth (the actual albums) and the 13 k-means clusters. The AMI and ARI are very close to 0 indicating that the clusters do not line up very well showing how Spotify metadata can not classify the Beatles albums. 
+Using unsupervised methods showed that two clusters would be optimal for this data, based on elbow, silhouette, and the gap statistic. The first cluster was older Beatles songs that were more danceable, energetic, speechiness, acousticness, liveness, and valence but shorter songs.
+
+Hierarchical clustering again reinforced the fact that the Spotify metadata is not good at classifying Beatles songs into their albums. Unsupervised methods indicated that 2, 3 or 10 would be best. Hierarchical clustering does not generate vastly different results than k-means clustering. After completing the clustering, I studied how the song characteristics were distributed for each cluster. For three clusters, the first cluster was more low liveness and medium danceable songs while the second cluster was more balanced. The third cluster had the most medium energy songs. Thus, hierarchical clustering can identify some patterns in Beatles songs, but not to the extent that I initially predicted. The 10 clusters provided other interesting results, especially when compared to the characteristic distribution of all of the songs.
+
+
